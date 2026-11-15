@@ -1,0 +1,35 @@
+# Nginx image template: variables are substituted at startup (envsubst).
+#   NGINX_LOCAL_RESOLVERS  DNS servers read from the container's /etc/resolv.conf by the image
+#                          (needs NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1): Docker, Kubernetes, ECS...
+#   AUTH_UPSTREAM / GRADES_UPSTREAM  where to send /api/auth/ and /api/grades/
+# Upstreams are resolved at request time (variables below): the gateway starts even if a
+# service is not up yet, and follows a service whose IP changes.
+resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
+
+server {
+    listen 80;
+    client_max_body_size 3m;   # otherwise 2 MB photos are rejected (default: 1 MB)
+
+    location /api/auth/ {
+        set $auth_upstream ${AUTH_UPSTREAM};
+        proxy_pass $auth_upstream;   # no path: URL is forwarded unchanged
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/grades/ {
+        set $grades_upstream ${GRADES_UPSTREAM};
+        proxy_pass $grades_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        default_type text/plain;
+        return 200 "INF4107 gateway OK - frontend not deployed yet\n";
+    }
+}
