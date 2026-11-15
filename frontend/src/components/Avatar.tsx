@@ -14,13 +14,13 @@ export function Avatar({ name, src, size = 32, onError }: AvatarProps) {
   const style = { width: size, height: size, fontSize: Math.round(size / 2.6) };
   if (src) {
     // eslint-disable-next-line @next/next/no-img-element -- static export, no image optimization
-    return <img src={src} alt="" style={style} onError={onError} className="rounded-full object-cover" />;
+    return <img src={src} alt="" style={style} onError={onError} className="rounded-full object-cover ring-2 ring-surface shadow-card" />;
   }
   return (
     <span
       aria-hidden="true"
       style={style}
-      className="inline-flex shrink-0 items-center justify-center rounded-full bg-accent-soft font-semibold text-accent"
+      className="inline-flex shrink-0 items-center justify-center rounded-full bg-accent-soft font-semibold text-accent ring-2 ring-surface"
     >
       {initials(name)}
     </span>

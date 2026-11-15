@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { GradesTable } from "@/components/GradesTable";
-import { buttonSecondary, inputField } from "@/components/styles";
+import { buttonSecondary, card, eyebrow, inputField } from "@/components/styles";
 import { ApiError, getGrades } from "@/lib/api";
 import type { GradesResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -17,11 +17,11 @@ function GradesSkeleton() {
     <div
       role="status"
       aria-busy="true"
-      className="animate-pulse space-y-3 rounded-card border border-line bg-surface p-4"
+      className={`${card} animate-pulse space-y-3 p-5`}
     >
       <span className="sr-only">Chargement des notes…</span>
       {Array.from({ length: 5 }, (_, index) => (
-        <div key={index} className="h-6 rounded bg-line" />
+        <div key={index} className="h-7 rounded-md bg-line" />
       ))}
     </div>
   );
@@ -58,24 +58,28 @@ export function NotesContent() {
     };
   }, [authenticated, semester, key]);
 
+  const courses = loading ? undefined : result?.grades?.courses;
+  const summary = courses?.length
+    ? `${courses.length} matières · ${courses.reduce((sum, course) => sum + course.credits, 0)} crédits`
+    : "";
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-        Semestre {semester}
-      </p>
-      <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-        <h1 className="border-l-4 border-accent pl-3 text-2xl font-semibold tracking-tight">
-          Mes notes
-        </h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <label htmlFor="semester" className="mr-2 text-sm font-medium">
+          <p className={eyebrow}>Semestre {semester}</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Mes notes</h1>
+          {summary && <p className="mt-1 text-sm text-muted">{summary}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="semester" className="text-sm font-medium">
             Semestre
           </label>
           <select
             id="semester"
             value={semester}
             onChange={(event) => setSemester(event.target.value)}
-            className={`${inputField} inline-block w-auto`}
+            className={`${inputField} inline-block w-auto pr-8`}
           >
             {SEMESTERS.map((value) => (
               <option key={value} value={value}>
@@ -89,7 +93,7 @@ export function NotesContent() {
       <div className="mt-6">
         {loading && <GradesSkeleton />}
         {!loading && result?.error && (
-          <div role="alert" className="rounded-card border border-line bg-surface p-6">
+          <div role="alert" className={`${card} p-6`}>
             <p className="text-danger">{result.error}</p>
             <button
               type="button"
@@ -101,7 +105,7 @@ export function NotesContent() {
           </div>
         )}
         {!loading && result?.grades && result.grades.courses.length === 0 && (
-          <p className="rounded-card border border-line bg-surface p-6 text-muted">
+          <p className={`${card} p-8 text-center text-muted`}>
             Aucune note pour ce semestre.
           </p>
         )}

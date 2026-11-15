@@ -21,7 +21,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <SiteHeader />
           <div className="flex-1">{children}</div>
         </AuthProvider>
-        <footer className="border-t border-line px-4 py-4 text-center text-sm text-muted">
+        <footer className="border-t border-line bg-surface px-4 py-5 text-center text-sm text-muted">
           Plateforme fictive utilisée pour le TP INF4107. Toutes les données sont des données de
           démonstration.
         </footer>

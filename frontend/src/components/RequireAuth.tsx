@@ -22,7 +22,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   if (status !== "authenticated") {
     return (
-      <p role="status" className="mx-auto max-w-6xl px-4 py-16 text-muted">
+      <p role="status" className="mx-auto max-w-6xl px-4 py-24 text-center text-muted">
         Chargement…
       </p>
     );

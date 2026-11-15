@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
 import { Avatar } from "@/components/Avatar";
-import { buttonPrimary } from "@/components/styles";
+import { buttonPrimary, card, eyebrow } from "@/components/styles";
 import { ApiError, uploadPhoto } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -81,28 +81,23 @@ export function ProfileContent() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Espace étudiant</p>
-      <h1 className="mt-2 border-l-4 border-accent pl-3 text-2xl font-semibold tracking-tight">
-        Mon profil
-      </h1>
+      <p className={eyebrow}>Espace étudiant</p>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight">Mon profil</h1>
 
-      <div className="mt-8 grid gap-8 md:grid-cols-[auto_1fr]">
-        <div className="flex items-center gap-5">
+      <div className="mt-8 grid items-start gap-6 md:grid-cols-[minmax(0,20rem)_1fr]">
+        <div className={`${card} flex flex-col items-center p-8 text-center`}>
           <Avatar name={user.full_name} src={photoSrc} size={128} onError={reportPhotoError} />
-          <dl className="text-sm">
-            <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Nom</dt>
-            <dd className="text-lg font-semibold">{user.full_name}</dd>
-            <dt className="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">
-              Matricule
-            </dt>
-            <dd className="tabular-nums">{user.matricule}</dd>
+          <dl className="mt-5 text-sm">
+            <dt className="sr-only">Nom</dt>
+            <dd className="text-xl font-semibold tracking-tight">{user.full_name}</dd>
+            <dt className="sr-only">Matricule</dt>
+            <dd className="mt-2 inline-block rounded-full bg-accent-soft px-3 py-1 font-medium tabular-nums text-accent">
+              {user.matricule}
+            </dd>
           </dl>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="max-w-xl rounded-card border border-line bg-surface p-6"
-        >
+        <form onSubmit={handleSubmit} className={`${card} p-6 sm:p-8`}>
           <h2 className="text-lg font-semibold tracking-tight">Photo de profil</h2>
           <label htmlFor="photo" className="mt-4 block text-sm font-medium">
             Choisir une photo
@@ -115,22 +110,22 @@ export function ProfileContent() {
             accept="image/jpeg,image/png"
             onChange={handleChange}
             aria-describedby="photo-hint"
-            className="mt-1 block w-full text-sm file:mr-3 file:rounded-card file:border file:border-line file:bg-page file:px-3 file:py-2 file:text-sm file:font-medium"
+            className="mt-1 block w-full text-sm file:mr-3 file:cursor-pointer file:rounded-lg file:border file:border-line file:bg-page file:px-3 file:py-2 file:text-sm file:font-medium hover:file:bg-line/50"
           />
           <p id="photo-hint" className="mt-1 text-sm text-muted">
             JPEG ou PNG, 2 Mo maximum.
           </p>
 
           {selected && (
-            <div className="mt-4 flex items-center gap-3">
+            <div className="mt-4 flex items-center gap-3 rounded-lg bg-page p-3">
               <Avatar name={user.full_name} src={selected.previewUrl} size={64} />
               <p className="text-sm text-muted">Aperçu avant enregistrement</p>
             </div>
           )}
 
           <div aria-live="polite" className="mt-4 min-h-5 text-sm">
-            {error && <p className="text-danger">{error}</p>}
-            {success && <p className="text-ink">{success}</p>}
+            {error && <p className="font-medium text-danger">{error}</p>}
+            {success && <p className="rounded-lg bg-success-soft px-3 py-2 font-medium text-success">{success}</p>}
           </div>
 
           <button

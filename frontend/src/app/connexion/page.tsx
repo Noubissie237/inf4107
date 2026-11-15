@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
-import { buttonPrimary, buttonSecondary, inputField } from "@/components/styles";
+import { buttonPrimary, buttonSecondary, card, eyebrow, inputField } from "@/components/styles";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isValidMatricule, normalizeMatricule } from "@/lib/format";
@@ -50,25 +50,25 @@ export default function LoginPage() {
 
   if (status !== "anonymous") {
     return (
-      <p role="status" className="mx-auto max-w-6xl px-4 py-16 text-muted">
+      <p role="status" className="mx-auto max-w-6xl px-4 py-24 text-center text-muted">
         Chargement…
       </p>
     );
   }
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-12 px-4 py-12 lg:grid-cols-2">
-      <section aria-labelledby="login-title" className="w-full max-w-md">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Espace étudiant</p>
+    <main className="mx-auto grid max-w-5xl items-stretch gap-6 px-4 py-12 sm:py-16 lg:grid-cols-[minmax(0,26rem)_1fr]">
+      <section aria-labelledby="login-title" className={`${card} w-full p-6 sm:p-8`}>
+        <p className={eyebrow}>Espace étudiant</p>
         <h1
           id="login-title"
-          className="mt-2 border-l-4 border-accent pl-3 text-2xl font-semibold tracking-tight"
+          className="mt-2 text-2xl font-semibold tracking-tight"
         >
           Connexion
         </h1>
 
         {sessionExpired && (
-          <p role="status" className="mt-6 rounded-card bg-accent-soft p-3 text-sm">
+          <p role="status" className="mt-6 rounded-lg bg-accent-soft p-3 text-sm text-accent-strong">
             Votre session a expiré.
           </p>
         )}
@@ -128,7 +128,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div aria-live="polite" className="min-h-5 text-sm text-danger">
+          <div aria-live="polite" className="min-h-5 text-sm font-medium text-danger">
             {formError}
           </div>
 
@@ -151,12 +151,22 @@ export default function LoginPage() {
         </form>
       </section>
 
-      <aside className="hidden rounded-card border border-line bg-surface p-8 lg:block">
-        <h2 className="text-lg font-semibold tracking-tight">Vos résultats en ligne</h2>
-        <p className="mt-3 text-muted">
-          Connectez-vous avec votre matricule pour consulter vos notes de contrôle continu, de
-          travaux pratiques et de session normale, et pour mettre à jour votre photo de profil.
-        </p>
+      <aside className="relative hidden overflow-hidden rounded-card bg-accent p-8 text-white shadow-pop lg:flex lg:flex-col lg:justify-end">
+        <div
+          aria-hidden="true"
+          className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute -bottom-24 -left-10 h-72 w-72 rounded-full bg-white/5"
+        />
+        <div className="relative">
+          <h2 className="text-2xl font-semibold tracking-tight">Vos résultats en ligne</h2>
+          <p className="mt-3 max-w-md leading-relaxed text-white/85">
+            Connectez-vous avec votre matricule pour consulter vos notes de contrôle continu, de
+            travaux pratiques et de session normale, et pour mettre à jour votre photo de profil.
+          </p>
+        </div>
       </aside>
     </main>
   );
