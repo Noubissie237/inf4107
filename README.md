@@ -1,16 +1,20 @@
-# INF4107 – Plateforme de consultation des notes (backend)
+# INF4107 – Plateforme de consultation des notes
 
-Backend de l'application de consultation de notes : deux microservices FastAPI
-(`auth-service`, `grades-service`), chacun avec sa base PostgreSQL, derrière une
-passerelle Nginx qui route par chemin. Le frontend n'est pas encore écrit.
-La référence détaillée (contraintes, modèle de données, étapes) est dans [CLAUDE.md](CLAUDE.md).
+Application de consultation de notes : un frontend statique (Next.js) et deux microservices
+FastAPI (`auth-service`, `grades-service`), chacun avec sa base PostgreSQL, derrière une
+passerelle Nginx qui route par chemin. La référence détaillée du backend (contraintes, modèle de
+données, étapes) est dans [CLAUDE.md](CLAUDE.md), celle du frontend dans
+[FRONTEND_SPEC.md](FRONTEND_SPEC.md).
 
 ```
                  ┌────────────────────┐   /api/auth/*    ┌──────────────┐   ┌─────────┐
  navigateur ───▶ │ gateway (Nginx :80)│ ───────────────▶ │ auth-service │──▶│ auth_db │
   :8080          │                    │   /api/grades/*  ├──────────────┤   ├─────────┤
                  │                    │ ───────────────▶ │grades-service│──▶│grades_db│
-                 └────────────────────┘   /  (texte)     └──────────────┘   └─────────┘
+                 │                    │   /              └──────────────┘   └─────────┘
+                 │                    │ ───────────────▶ ┌──────────────┐
+                 └────────────────────┘                  │   frontend   │ (fichiers statiques)
+                                                         └──────────────┘
 ```
 
 Les deux services ne s'appellent jamais entre eux : `auth-service` émet un JWT,
@@ -32,7 +36,7 @@ make venv && make smoke               # environnement Python local (.venv), test
 `make smoke` utilisent automatiquement ce `.venv` (sinon `python3`). Un `pip install` hors
 environnement virtuel est refusé par les distributions récentes (« externally-managed-environment »).
 
-Ensuite : `http://localhost:8080/` (texte provisoire), documentation interactive sur
+Ensuite : l'application est sur `http://localhost:8080/`, la documentation interactive sur
 `http://localhost:8080/api/auth/docs` et `http://localhost:8080/api/grades/docs`.
 Connexion avec le matricule `20u2671` et le mot de passe `SEED_PASSWORD` du fichier `.env`.
 
@@ -49,7 +53,7 @@ Arrêt : `make down`. Pour repartir de zéro (bases et photos) : `docker compose
 | GET | `/api/auth/health` | auth | non | Santé (base de données comprise) |
 | GET | `/api/grades/me/grades?semester=S1` | grades | oui | Notes CC, TP, SN et moyenne |
 | GET | `/api/grades/health` | grades | non | Santé |
-| GET | `/` | passerelle | non | Texte provisoire |
+| GET | `/`, `/connexion/`, `/notes/`, `/profil/` | frontend | non | Pages du site (la protection des pages se fait côté client, c'est l'API qui protège les données) |
 
 Le jeton se passe dans l'en-tête `Authorization: Bearer <jwt>`.
 
@@ -82,11 +86,12 @@ Les identifiants S3 ne sont jamais dans le code : boto3 utilise sa chaîne par d
 
 ## Tests
 
-Les tests tournent sans Docker ni PostgreSQL (SQLite en mémoire) :
+Les tests tournent sans Docker ni PostgreSQL (SQLite en mémoire pour le backend) :
 
 ```bash
 make venv        # une seule fois
-make test        # tests des deux services
+make test        # tests des deux services, puis ESLint et tests du frontend
+make test-front  # frontend seulement (Node.js requis, installe les paquets la première fois)
 ```
 
 Le test de bout en bout `scripts/smoke_test.py` s'exécute contre la passerelle :
@@ -110,6 +115,73 @@ docker compose --profile tools run --rm seed --students 2000 --my-matricule 20u2
 Options : `--students`, `--my-matricule`, `--password` (ou `SEED_PASSWORD`), `--seed`,
 `--reset`. Variables : `AUTH_DATABASE_URL` et `GRADES_DATABASE_URL`. Les migrations doivent
 déjà avoir été appliquées (c'est le cas dès que les services ont démarré).
+
+## Frontend
+
+Le frontend (`frontend/`) est un site **statique** : Next.js (App Router, TypeScript strict,
+Tailwind CSS) exporté en fichiers HTML, CSS et JavaScript dans `frontend/out/`. Il n'a besoin
+d'aucun serveur Node pour fonctionner. Pages : accueil (`/`), connexion (`/connexion/`), notes
+(`/notes/`) et profil avec photo (`/profil/`).
+
+### Lancement
+
+Avec Docker, rien à installer : `make up` construit et démarre aussi le service `frontend` (image
+Nginx non-root, port 8080 du conteneur, aucun port publié sur la machine), que la passerelle sert
+sur `http://localhost:8080/`.
+
+### Mode développement
+
+Avec le backend lancé (`make up && make seed`) :
+
+```bash
+cd frontend
+npm ci            # la première fois
+npm run dev       # http://localhost:3000
+```
+
+Le fichier `frontend/.env.development` (`NEXT_PUBLIC_DEV_GATEWAY=http://localhost:8080`) fait parler
+le site au backend via la passerelle ; le backend autorise déjà l'origine `http://localhost:3000`
+(`CORS_ORIGINS`). Cette variable n'existe que pour `npm run dev` : elle n'est pas dans le site construit.
+
+### Configuration à l'exécution (`config.json`)
+
+Le site ne contient **aucune adresse de serveur figée** : au démarrage, il lit `/config.json` :
+
+```json
+{ "authApiUrl": "/api/auth", "gradesApiUrl": "/api/grades" }
+```
+
+- Les valeurs par défaut sont des **chemins relatifs** : tout fonctionne quand le site et l'API
+  sont servis sous la même adresse (passerelle, CloudFront avec plusieurs origines, load balancer).
+- Elles peuvent être des **URL absolues** (par exemple `https://api.20u2671.inf4107.site/api/auth`)
+  quand l'API a un autre nom de domaine : c'est un choix d'architecture des étudiants. Dans ce cas
+  l'API doit autoriser l'origine du site (`CORS_ORIGINS`).
+- Si le fichier est absent ou invalide, les valeurs par défaut s'appliquent.
+- Dans le conteneur, un script d'entrée **réécrit `config.json` à chaque démarrage** à partir des
+  variables `AUTH_API_URL` et `GRADES_API_URL`, sans reconstruire l'image :
+
+```bash
+AUTH_API_URL=https://api.20u2671.inf4107.site/api/auth \
+GRADES_API_URL=https://api.20u2671.inf4107.site/api/grades \
+  docker compose up -d frontend
+curl http://localhost:8080/config.json
+```
+
+(Ces variables peuvent aussi se mettre dans `.env`, voir `.env.example`.)
+
+### Construction statique
+
+```bash
+cd frontend
+npm ci && npm run build      # produit frontend/out/
+```
+
+Le dossier `out/` se dépose **tel quel** sur n'importe quel hébergement statique (bucket avec CDN,
+Nginx, PaaS...). Deux règles pour l'héberger : servir `index.html` d'un dossier pour `/dossier/`
+(par exemple `/connexion/` vers `connexion/index.html`) et renvoyer `404.html` pour une page
+inconnue. Modifiez `out/config.json` pour changer les adresses de l'API. `frontend/docker/nginx.conf`
+est un exemple complet, avec `Cache-Control: no-store` pour `config.json` et un cache long pour
+`/_next/static/`.
 
 ## Test de charge (k6)
 
@@ -233,3 +305,103 @@ est ignorée, ce qui évite une boucle (la miniature n'est pas sous `photos/orig
   reconstruit jamais une image existante).
 - Makefile : `python` n'existe pas sur toutes les machines (Ubuntu n'a que `python3`) ;
   la variable `PYTHON` vaut `.venv/bin/python` si `make venv` a été lancé, sinon `python3`.
+
+## Frontend : décisions
+
+Le frontend (`frontend/`, décrit dans [FRONTEND_SPEC.md](FRONTEND_SPEC.md)) a été construit étape
+par étape. Décisions de l'étape 1 (socle) :
+
+- Export statique (`output: 'export'`) : `npm run build` produit `frontend/out/`, déposable
+  tel quel sur un hébergement statique.
+- Les adresses des API se lisent à l'exécution dans `/config.json` (jamais figées au build).
+  Les valeurs par défaut sont des chemins relatifs (`/api/auth`, `/api/grades`). Si le fichier
+  est absent ou invalide, ces valeurs par défaut sont utilisées.
+- Mode développement seulement : `NEXT_PUBLIC_DEV_GATEWAY` (`frontend/.env.development`)
+  préfixe les chemins relatifs pour que `npm run dev` (port 3000) parle à la passerelle
+  (port 8080). Cette branche est supprimée du build de production.
+- Le jeton JWT est conservé dans `sessionStorage` (effacé à la fermeture de l'onglet) :
+  compromis assumé pour un TP. Un script de la page pourrait le lire en cas de faille XSS ;
+  il n'y a pas de jeton de rafraîchissement.
+- Versions : npm a installé les dernières versions compatibles entre elles (Next.js 16,
+  React 19, TypeScript 6, ESLint 9, Vitest 5, Tailwind CSS 4), figées par `package-lock.json`.
+  Les versions plus récentes publiées (TypeScript 7, ESLint 10) n'ont pas été retenues par npm :
+  elles ne satisfont pas les dépendances des autres paquets.
+- Palette : gris ardoise et un seul accent bleu, définie une seule fois dans
+  `src/app/globals.css` (bloc `@theme`).
+
+Décisions de l'étape 2 (en-tête, accueil, connexion) :
+
+- La protection des pages (`RequireAuth`) se fait côté client : un export statique n'a pas de
+  serveur ni de middleware. **Ce n'est pas une mesure de sécurité** : c'est l'API qui protège
+  les données (sans jeton valide, elle répond 401).
+- La page de connexion n'affiche le formulaire que lorsque l'état est « anonyme » : pendant la
+  restauration de la session (`loading`), elle affiche « Chargement… », ce qui évite un
+  clignotement du formulaire chez un étudiant déjà connecté. Quand l'état devient « connecté »
+  (connexion à l'instant ou session restaurée), une seule redirection vers `/notes/` s'applique.
+- Le message « Votre session a expiré. » s'affiche sur la page de connexion quand un appel
+  authentifié a reçu un 401 (`sessionExpired` dans le contexte d'authentification).
+- Après « Se déconnecter », l'étudiant reste sur la page courante si elle est publique ; une page
+  protégée le renvoie vers `/connexion/`.
+- Dans les tests unitaires, `next/link` n'ajoute pas la barre oblique finale (c'est l'option
+  `trailingSlash` de Next qui le fait dans le vrai build) : les tests acceptent les deux formes.
+- Les classes des boutons et des champs sont définies une seule fois dans
+  `src/components/styles.ts`.
+
+Décisions de l'étape 3 (notes) :
+
+- Le sélecteur de semestre est une liste déroulante étiquetée (S1 par défaut, S2) : native,
+  accessible au clavier, sans composant à écrire. Une réponse qui arrive après un changement de
+  semestre est ignorée.
+- Une absence de note s'affiche « — » avec le libellé « Note absente » réservé aux lecteurs d'écran
+  (classe `sr-only`). Le conteneur à défilement du tableau est `relative` : sans cela, ces libellés
+  (en position absolue) élargissaient toute la page sur téléphone (défaut trouvé à 375 px).
+- Une réponse 401 pendant la consultation déconnecte l'étudiant, qui est renvoyé vers
+  `/connexion/` avec « Votre session a expiré. ». Ce message s'affiche aussi quand un jeton
+  conservé dans l'onglet est périmé ou refusé au chargement de la page. Il n'apparaît pas quand le
+  serveur est simplement injoignable.
+- Le chargement affiche un squelette ; une erreur réseau ou serveur affiche son message et un
+  bouton « Réessayer ».
+
+Décisions de l'étape 4 (profil et photo) :
+
+- L'adresse de la photo affichée (`photoSrc`) est calculée une seule fois, dans le contexte
+  d'authentification, et partagée par la page de profil et l'en-tête : un seul téléchargement,
+  et les deux changent en même temps après un envoi. Selon `photo_url` : `null` donne les
+  initiales ; un chemin relatif (mode local) est téléchargé avec `fetch` et l'en-tête
+  `Authorization`, puis affiché via une URL d'objet (révoquée quand elle ne sert plus) ; une
+  URL absolue (mode S3) sert directement de `src`. La photo n'est jamais mise en cache par le
+  navigateur (`cache: 'no-store'`), car l'adresse `/api/auth/me/photo` reste la même quand la
+  photo change.
+- Si l'image d'une URL absolue ne se charge pas (URL signée expirée), `/me` est rechargé **une
+  seule fois** pour obtenir une nouvelle URL. Un nouvel envoi de photo (ou une actualisation
+  volontaire du profil) réarme ce rechargement.
+- Vérifications côté client avant l'envoi : type JPEG ou PNG et 2 Mio maximum, avec aperçu
+  avant l'enregistrement. Le type vient de la déclaration du navigateur (selon l'extension) : un
+  fichier texte renommé en `.jpg` passe donc ce contrôle et c'est le serveur qui le refuse (415,
+  message affiché tel quel). Le serveur garde le dernier mot (413, 415, 422).
+- Après un envoi réussi, le profil est rechargé (`/me`), le champ de fichier est vidé et un
+  message de confirmation s'affiche.
+- Les comptes du seed partagent le même mot de passe : les tests manuels d'envoi de photo
+  laissent donc des photos dans le volume `photos` (supprimées par `docker compose down -v`).
+
+Décisions de l'étape 5 (conteneur, passerelle, intégration) :
+
+- Image en deux étapes : construction avec `node:24-alpine` (`npm ci` puis `npm run build`), puis
+  service de `out/` par `nginxinc/nginx-unprivileged` (utilisateur `nginx`, port 8080, pas de
+  `root`). `GET /healthz` répond « ok » : il sert au `HEALTHCHECK` de l'image et à celui de compose.
+- Le script d'entrée appartient à `/docker-entrypoint.d/` et écrit `config.json` à chaque démarrage
+  (échappement des guillemets et barres obliques inverses pour que le JSON reste valide). Le
+  dossier du site appartient à l'utilisateur `nginx` pour que ce script puisse l'écrire.
+- La passerelle envoie tout ce qui n'est pas `/api/auth/` ni `/api/grades/` au frontend, selon le
+  même motif que les API (résolution à la requête). Son adresse se règle par `FRONTEND_UPSTREAM`
+  (`http://frontend:8080` par défaut), comme `AUTH_UPSTREAM` et `GRADES_UPSTREAM`. La spec cite
+  `docker/nginx/default.conf` : le fichier du dépôt est devenu `default.conf.template`.
+- Le fichier de verrouillage `package-lock.json` a dû être régénéré avec le npm de l'image Node :
+  celui produit par un npm plus ancien n'était pas accepté par `npm ci` (dépendances optionnelles
+  `@emnapi/*` absentes). Il est maintenant accepté par npm 11.6 (poste) et 11.19 (image).
+- `make test` exécute les tests du backend puis `make test-front` (ESLint et tests Vitest). Si
+  `node_modules` n'existe pas, `make test-front` lance d'abord `npm ci`.
+- `scripts/smoke_test.py` et `teacher/check_instances.py` fonctionnent sans changement : aucune de
+  leurs vérifications ne dépendait du texte provisoire de la page d'accueil (le contrôle de
+  l'accueil vérifie seulement un statut 200).
+

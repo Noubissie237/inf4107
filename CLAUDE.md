@@ -9,7 +9,7 @@
 - Reste **simple** : pas d'abstraction, de bibliothèque ni de fonctionnalité qui ne soit pas demandée ici. C'est un support de TP, le code doit être lisible par des étudiants de Master 1.
 - Pour tout détail non précisé, décide toi-même et note la décision dans la section « Décisions » du `README.md`.
 - Code, noms de variables et commentaires en **anglais**. Messages d'erreur renvoyés par l'API et `README.md` en **français**.
-- Ne crée **pas** de frontend dans cette phase.
+- Le frontend (`frontend/`) est décrit à part, dans FRONTEND_SPEC.md, et il est construit : ne le modifie pas en travaillant sur le backend. Le contrat de l'API (sections 7 et 8) est ce dont il dépend : tout changement de ce contrat doit être signalé.
 
 ## 1. Contexte du projet
 
@@ -25,7 +25,7 @@ Ce backend se compose de **deux microservices FastAPI** indépendants, chacun av
 | --- | --- |
 | `/api/auth/*` | `auth-service` |
 | `/api/grades/*` | `grades-service` |
-| `/` | frontend (pas encore écrit : la passerelle renvoie un texte provisoire) |
+| `/` (et tout le reste) | `frontend` : site statique Next.js (pages `/`, `/connexion/`, `/notes/`, `/profil/`), décrit dans FRONTEND_SPEC.md |
 
 Les deux services **ne s'appellent jamais entre eux**. `auth-service` émet un JWT, `grades-service` le vérifie avec un secret partagé.
 
@@ -81,6 +81,7 @@ Ces règles garantissent que les étudiants pourront déployer le code partout :
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── seed.py
+├── frontend/                  # site statique Next.js, voir FRONTEND_SPEC.md (Dockerfile, docker/, src/, tests/)
 ├── scripts/
 │   ├── smoke_test.py         # test de bout en bout sur la passerelle
 │   └── requirements.txt      # httpx
@@ -126,6 +127,9 @@ Le dossier `teacher/` est réservé à l'enseignant : il est retiré du dépôt 
 | `BCRYPT_ROUNDS` | seed | Coût bcrypt des mots de passe seedés (4 à 14), option `--bcrypt-rounds` | `10` |
 | `AUTH_UPSTREAM` | passerelle | Adresse d'`auth-service` pour Nginx | `http://auth-service:8000` |
 | `GRADES_UPSTREAM` | passerelle | Adresse de `grades-service` pour Nginx | `http://grades-service:8000` |
+| `FRONTEND_UPSTREAM` | passerelle | Adresse du frontend pour Nginx (tout ce qui n'est pas `/api/...`) | `http://frontend:8080` |
+| `AUTH_API_URL` | frontend | Adresse de l'API d'authentification écrite dans `config.json` au démarrage du conteneur | `/api/auth` |
+| `GRADES_API_URL` | frontend | Adresse de l'API des notes écrite dans `config.json` | `/api/grades` |
 
 Fournis un `.env.example` à la racine avec des valeurs de développement (un faux `JWT_SECRET` long, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `SEED_PASSWORD`) et, en commentaire, le bloc du mode S3 avec MinIO (`STORAGE_BACKEND=s3`, `S3_*`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). Le vrai `.env` est dans `.gitignore`. Le mode S3 local se règle dans `.env` (lu par `env_file`), pas par un fichier compose séparé.
 
@@ -283,7 +287,7 @@ Les clés sont `photos/original/<matricule>` et `photos/thumb/<matricule>.jpg`.
 
 ### `docker/nginx/default.conf.template`
 
-Modèle traité au démarrage par l'image Nginx (`envsubst`, fichier monté dans `/etc/nginx/templates/`). Rien de propre à Docker n'est écrit en dur : le serveur DNS vient de `/etc/resolv.conf` (variable `NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1`, l'image fournit alors `NGINX_LOCAL_RESOLVERS`), et les adresses des services viennent de `AUTH_UPSTREAM` et `GRADES_UPSTREAM`. Cela fonctionne donc aussi sous Kubernetes ou ECS.
+Modèle traité au démarrage par l'image Nginx (`envsubst`, fichier monté dans `/etc/nginx/templates/`). Rien de propre à Docker n'est écrit en dur : le serveur DNS vient de `/etc/resolv.conf` (variable `NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1`, l'image fournit alors `NGINX_LOCAL_RESOLVERS`), et les adresses des services viennent de `AUTH_UPSTREAM`, `GRADES_UPSTREAM` et `FRONTEND_UPSTREAM`. Cela fonctionne donc aussi sous Kubernetes ou ECS.
 
 ```nginx
 resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
@@ -311,13 +315,17 @@ server {
     }
 
     location / {
-        default_type text/plain;
-        return 200 "INF4107 gateway OK - frontend not deployed yet\n";
+        set $frontend_upstream ${FRONTEND_UPSTREAM};
+        proxy_pass $frontend_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-`proxy_pass` avec une variable et sans chemin transmet l'URL **inchangée** : c'est voulu, car les services portent déjà leur préfixe. L'adresse est résolue à chaque requête : la passerelle démarre même si un service n'est pas encore prêt et suit un service dont l'IP change.
+`proxy_pass` avec une variable et sans chemin transmet l'URL **inchangée** : c'est voulu, car les services portent déjà leur préfixe. `location /` envoie tout le reste (pages, `config.json`, ressources statiques, page 404) au frontend. L'adresse est résolue à chaque requête : la passerelle démarre même si un service n'est pas encore prêt et suit un service dont l'IP change.
 
 ### `docker-compose.yml`
 
@@ -325,13 +333,14 @@ Services :
 
 - `postgres` : `postgres:16-alpine`, volume nommé, `healthcheck` avec `pg_isready`, montage de `docker/postgres/init-databases.sh` dans `/docker-entrypoint-initdb.d/`. Ce script crée `auth_db` et `grades_db` (avec `ON_ERROR_STOP=1`).
 - `auth-service` et `grades-service` : build local, variables lues depuis `.env`, `DATABASE_URL` construit à partir de `POSTGRES_USER` et `POSTGRES_PASSWORD`, `depends_on: postgres` avec `condition: service_healthy`, `healthcheck` sur `/health` (avec `python -c` et `urllib`, l'image slim n'a pas `curl`). `auth-service` monte un volume nommé sur `/data/photos`.
-- `gateway` : `nginx:1.27-alpine`, port hôte `8080` vers 80, monte `default.conf.template` dans `/etc/nginx/templates/`, reçoit `NGINX_ENTRYPOINT_LOCAL_RESOLVERS`, `AUTH_UPSTREAM` et `GRADES_UPSTREAM`, dépend des deux services.
+- `gateway` : `nginx:1.27-alpine`, port hôte `8080` vers 80, monte `default.conf.template` dans `/etc/nginx/templates/`, reçoit `NGINX_ENTRYPOINT_LOCAL_RESOLVERS`, `AUTH_UPSTREAM`, `GRADES_UPSTREAM` et `FRONTEND_UPSTREAM`, dépend des trois services.
+- `frontend` : build `./frontend` (Node pour construire, puis `nginxinc/nginx-unprivileged` pour servir `out/`, non-root, port 8080 du conteneur), aucun port publié sur la machine, `healthcheck` sur `/healthz`. Il reçoit `AUTH_API_URL` et `GRADES_API_URL`, qu'un script d'entrée écrit dans `config.json` à chaque démarrage (sans reconstruire l'image).
 - `seed` : profil `tools` (ne démarre pas avec `up`), voir section 11.
 - `minio` et `minio-init` : profil `s3` (étape 7). `minio-init` crée le bucket avec le client `mc` déjà présent dans l'image `minio/minio` (l'image `minio/mc` n'est pas toujours téléchargeable).
 
 Le fichier commence par `name: inf4107-backend` : sans cela, le projet s'appelle « backend » (nom du dossier) et peut réutiliser le volume `backend_pgdata` d'un autre projet, ce qui empêche la création des bases.
 
-`Makefile` : `up` (`docker compose up -d --build`), `down`, `seed` (reconstruit l'image du seed puis la lance : `docker compose run` ne reconstruit jamais une image existante), `venv` (crée `.venv/` et installe les dépendances de test), `test` (tests des deux services), `smoke` (`scripts/smoke_test.py`, avec `SEED_PASSWORD` lu dans `.env`). `test` et `smoke` utilisent `.venv/bin/python` s'il existe, sinon `python3` (variable `PYTHON`) : `python` n'existe pas sur toutes les machines.
+`Makefile` : `up` (`docker compose up -d --build`), `down`, `seed` (reconstruit l'image du seed puis la lance : `docker compose run` ne reconstruit jamais une image existante), `venv` (crée `.venv/` et installe les dépendances de test), `test` (tests des deux services, puis `test-front`), `test-front` (ESLint et tests Vitest du frontend, `npm ci` d'abord si `node_modules` manque), `smoke` (`scripts/smoke_test.py`, avec `SEED_PASSWORD` lu dans `.env`). `test` et `smoke` utilisent `.venv/bin/python` s'il existe, sinon `python3` (variable `PYTHON`) : `python` n'existe pas sur toutes les machines.
 
 ### Dockerfile d'un service (exemple à adapter)
 
@@ -393,7 +402,7 @@ Contenu :
 
 Arborescence, `.gitignore`, `.env.example`, `Makefile`, `docker-compose.yml` (postgres et gateway seulement, les services sont ajoutés ensuite), `docker/nginx/default.conf.template`, `docker/postgres/init-databases.sh`, `README.md` de départ.
 
-Validation : `docker compose up -d` démarre PostgreSQL (healthy) et la passerelle ; `curl http://localhost:8080/` renvoie le texte provisoire ; les bases `auth_db` et `grades_db` existent.
+Validation : `docker compose up -d` démarre PostgreSQL (healthy) et la passerelle ; `curl http://localhost:8080/` répond (à ce stade un texte provisoire ; depuis l'ajout du frontend, la page d'accueil) ; les bases `auth_db` et `grades_db` existent.
 
 ### Étape 2 – auth-service (connexion, profil, health)
 
@@ -460,4 +469,4 @@ Validation : `make up && make seed && make smoke` passe de bout en bout sur une 
 
 ## 14. Hors périmètre
 
-À ne **pas** construire : rôles enseignant ou admin, saisie ou modification de notes via l'API, inscription ou création de compte par l'API, réinitialisation du mot de passe, relevé PDF, e-mails, file de messages, cache Redis, Kubernetes, fichiers d'infrastructure as code, frontend. Les étudiants construiront eux-mêmes l'infrastructure.
+À ne **pas** construire : rôles enseignant ou admin, saisie ou modification de notes via l'API, inscription ou création de compte par l'API, réinitialisation du mot de passe, relevé PDF, e-mails, file de messages, cache Redis, Kubernetes, fichiers d'infrastructure as code. Le frontend est décrit séparément (FRONTEND_SPEC.md). Les étudiants construiront eux-mêmes l'infrastructure.

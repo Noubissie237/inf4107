@@ -1,4 +1,4 @@
-.PHONY: up down seed venv test smoke
+.PHONY: up down seed venv test test-front smoke
 
 # Python used for tests and the smoke test: the local .venv if it exists (make venv),
 # otherwise python3. Override with: make test PYTHON=/path/to/python
@@ -22,6 +22,11 @@ venv:
 test:
 	cd auth-service && $(PYTHON) -m pytest
 	cd grades-service && $(PYTHON) -m pytest
+	$(MAKE) test-front
+
+# ESLint and unit tests of the frontend (needs Node.js; installs the packages the first time)
+test-front:
+	cd frontend && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run lint && npm test
 
 smoke:
 	set -a; . ./.env; set +a; $(PYTHON) scripts/smoke_test.py

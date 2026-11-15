@@ -92,15 +92,30 @@ services:
       postgres:
         condition: service_healthy
 
+  frontend:
+    build: ./frontend
+    environment:
+      # Written into config.json at every start (relative paths: same origin as the gateway)
+      AUTH_API_URL: ${AUTH_API_URL:-/api/auth}
+      GRADES_API_URL: ${GRADES_API_URL:-/api/grades}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   gateway:
     image: nginx:1.27-alpine
     environment:
       NGINX_ENTRYPOINT_LOCAL_RESOLVERS: "1"   # resolver taken from /etc/resolv.conf
       AUTH_UPSTREAM: http://auth-service:8000
       GRADES_UPSTREAM: http://grades-service:8000
+      FRONTEND_UPSTREAM: http://frontend:8080
     depends_on:
       - auth-service
       - grades-service
+      - frontend
     ports:
       - "8080:80"
     volumes:
